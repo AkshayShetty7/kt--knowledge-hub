@@ -46,12 +46,8 @@ def extract_and_chunk_pdf(
     for page in pages:
         page.metadata["source_id"] = source_id
         page.metadata["filename"] = filename
-        page.metadata["file_path"] = str(file_path)
-
-        # PyPDFLoader uses zero-based page numbers.
-        # Convert them to human-readable one-based page numbers.
-        page_number = page.metadata.get("page", 0)
-        page.metadata["page"] = page_number + 1
+        page.metadata["file_path"] = file_path
+        page.metadata["page"] = page.metadata.get("page", 0) + 1
 
     # Configure the text splitter.
     #

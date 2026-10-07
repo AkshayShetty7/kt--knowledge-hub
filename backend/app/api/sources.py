@@ -14,6 +14,12 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from app.services.ingestion import extract_and_chunk_pdf
 from app.services.vector_store import create_or_update_vector_store
 
+from sqlalchemy.orm import Session
+from fastapi import Depends
+
+from app.core.database import get_db
+from app.models.source import Source
+
 
 router = APIRouter(prefix="/sources", tags=["Sources"])
 
@@ -24,7 +30,10 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @router.post("/upload")
-async def upload_source(file: UploadFile = File(...)):
+async def upload_source(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
     """
     Upload and process a PDF source.
 
@@ -71,6 +80,17 @@ async def upload_source(file: UploadFile = File(...)):
     contents = await file.read()
     file_path.write_bytes(contents)
 
+    source = Source(
+    id=source_id,
+    filename=filename,
+    file_type="pdf",
+    file_path=str(file_path),
+    status="processing",
+)
+
+    db.add(source)
+    db.commit()
+
     # PDF -> pages -> text chunks
     chunks = extract_and_chunk_pdf(
         file_path=str(file_path),
@@ -81,10 +101,18 @@ async def upload_source(file: UploadFile = File(...)):
     # Chunks -> embeddings -> FAISS vector store
     create_or_update_vector_store(chunks)
 
+    source.status = "indexed"
+    source.pages = len(
+        set(chunk.metadata["page"] for chunk in chunks)
+    )
+    source.chunks = len(chunks)
+
+    db.commit()
+
     return {
         "source_id": source_id,
         "filename": filename,
-        "status": "uploaded",
+        "status": source.status,
         "pages": len(set(
             chunk.metadata["page"]
             for chunk in chunks
